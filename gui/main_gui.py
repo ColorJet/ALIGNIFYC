@@ -584,6 +584,13 @@ class AlinifyMainWindow(QMainWindow):
         config_camera_action.triggered.connect(self.showCameraConfig)
         camera_menu.addAction(config_camera_action)
         
+        camera_menu.addSeparator()
+        
+        analyze_image_action = QAction('&Analyze Image File...', self)
+        analyze_image_action.setStatusTip('Load an image file into the Camera Analysis tab for intensity analysis')
+        analyze_image_action.triggered.connect(self.loadImageForAnalysis)
+        camera_menu.addAction(analyze_image_action)
+        
         # View Menu
         view_menu = menubar.addMenu('&View')
         
@@ -903,6 +910,13 @@ class AlinifyMainWindow(QMainWindow):
         self.log_viewer = QTextEdit()
         self.log_viewer.setReadOnly(True)
         control_tabs.addTab(self.log_viewer, "Log")
+        
+        # Camera Analysis tab with enhanced ImageViewer
+        self.camera_analysis_viewer = ImageViewer()
+        self.camera_analysis_viewer.setTitle("Camera Frame Analysis")
+        self.camera_analysis_viewer.intensity_changed.connect(self.onIntensityChanged)
+        self.camera_analysis_viewer.roi_analyzed.connect(self.onROIAnalyzed)
+        control_tabs.addTab(self.camera_analysis_viewer, "📷 Camera Analysis")
         
         # Store reference for adding layer manager later
         self.control_tabs = control_tabs
@@ -2102,19 +2116,44 @@ class AlinifyMainWindow(QMainWindow):
     
     def pollCameraFrames(self):
         """Poll for new camera frames (called by timer)"""
-        # This is a placeholder - actual implementation depends on how
-        # the C++ camera exposes frames to Python
-        # Options:
+        # This polls the camera for new frames and sends them to analysis
+        # Options for frame retrieval:
         # 1. Callback-based (requires pybind11 callback support)
         # 2. Polling with get_latest_frame() method
         # 3. Queue-based with get_frame_queue()
         
-        # For now, just check if camera is still acquiring
         if self.camera and self.is_camera_acquiring:
-            is_acquiring = self.camera.is_acquiring()
-            if not is_acquiring:
-                self.log("⚠ Camera stopped acquiring unexpectedly")
-                self.stopCamera()
+            try:
+                # Check if camera is still acquiring
+                is_acquiring = self.camera.is_acquiring()
+                if not is_acquiring:
+                    self.log("⚠ Camera stopped acquiring unexpectedly")
+                    self.stopCamera()
+                    return
+                
+                # Try to get the latest frame (if method exists)
+                if hasattr(self.camera, 'get_latest_frame'):
+                    frame = self.camera.get_latest_frame()
+                    if frame is not None:
+                        # Send to camera analysis viewer
+                        self.updateCameraAnalysisImage(frame)
+                        
+                        # Also update the main camera image for registration
+                        self.camera_image = frame
+                        self.layer_canvas.setCameraImage(frame)
+                        
+                        # Log frame stats periodically (every 10th frame)
+                        if not hasattr(self, '_frame_count'):
+                            self._frame_count = 0
+                        self._frame_count += 1
+                        if self._frame_count % 10 == 0:
+                            stats = self.camera.get_statistics()
+                            self.log(f"📷 Frame #{self._frame_count}: "
+                                   f"{stats.frames_received} received, "
+                                   f"{stats.fps:.1f} FPS")
+                                   
+            except Exception as e:
+                self.log(f"⚠ Frame poll error: {e}")
     
     def _update_optimizer_info(self):
         """Update optimizer info label based on selection"""
@@ -4073,6 +4112,65 @@ MOUSE CONTROLS:
         from datetime import datetime
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         self.log_viewer.append(f"[{timestamp}] {message}")
+    
+    def onIntensityChanged(self, stats):
+        """Handle intensity stats update from camera analysis viewer"""
+        if stats:
+            self.log(f"📊 Intensity: Min={stats.get('min', '--')}, Max={stats.get('max', '--')}, "
+                    f"Mean={stats.get('mean', 0):.1f}, Std={stats.get('std', 0):.1f}")
+    
+    def onROIAnalyzed(self, roi_stats):
+        """Handle ROI analysis from camera analysis viewer"""
+        if roi_stats:
+            self.log(f"🔍 ROI Analysis: {roi_stats.get('region', '')}")
+            self.log(f"   Size: {roi_stats.get('size', '')} px")
+            self.log(f"   Range: {roi_stats.get('min', '--')} - {roi_stats.get('max', '--')} "
+                    f"(Dynamic: {roi_stats.get('dynamic_range', '--')})")
+            self.log(f"   Mean: {roi_stats.get('mean', 0):.1f}, Std: {roi_stats.get('std', 0):.1f}")
+    
+    def loadImageForAnalysis(self):
+        """Load an image file into the Camera Analysis viewer for intensity analysis"""
+        import cv2
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Image for Analysis",
+            "",
+            "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp);;All Files (*.*)"
+        )
+        
+        if file_path:
+            try:
+                # Load image
+                img = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+                if img is None:
+                    QMessageBox.critical(self, "Error", f"Failed to load image: {file_path}")
+                    return
+                
+                # Convert BGR to RGB if color
+                if len(img.shape) == 3 and img.shape[2] == 3:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                
+                # Send to analysis viewer
+                self.updateCameraAnalysisImage(img)
+                
+                # Switch to Camera Analysis tab
+                for i in range(self.control_tabs.count()):
+                    if "Camera Analysis" in self.control_tabs.tabText(i):
+                        self.control_tabs.setCurrentIndex(i)
+                        break
+                
+                self.log(f"📷 Loaded image for analysis: {file_path}")
+                self.log(f"   Shape: {img.shape}, Dtype: {img.dtype}")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Error loading image:\n{e}")
+                import traceback
+                self.log(traceback.format_exc())
+    
+    def updateCameraAnalysisImage(self, image_array):
+        """Update the camera analysis viewer with a new frame"""
+        if hasattr(self, 'camera_analysis_viewer'):
+            self.camera_analysis_viewer.setImage(image_array)
     
     def setAccelerationMode(self, mode: str):
         """Set GPU acceleration mode for warping operations"""
