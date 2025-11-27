@@ -1,0 +1,48 @@
+<?xml version='1.0' encoding='utf-8'?>
+<FG>
+	<ROI>
+		<Feature Name="Width">0</Feature>
+		<Feature Name="Height">0</Feature>
+		<Feature Name="OffsetX">0</Feature>
+		<Feature Name="OffsetY">0</Feature>
+		<Feature Name="DeltaX">0</Feature>
+		<Feature Name="DeltaY">0</Feature>
+		<Feature Name="StripOffsetX">0.000000</Feature>
+		<Feature Name="StripOffsetY">0.000000</Feature>
+		<Feature Name="RowDeltaX">0.000000</Feature>
+		<Feature Name="RowDeltaY">0.000000</Feature>
+		<Feature Name="ColDeltaX">0.000000</Feature>
+		<Feature Name="ColDeltaY">0.000000</Feature>
+		<Feature Name="FramesPerRow">0</Feature>
+	</ROI>
+	<CameraLink>
+		<Feature Name="NumParallelPixels">2</Feature>
+		<Feature Name="NumZones">1</Feature>
+		<Feature Name="ZonesDirection">0</Feature>
+		<Feature Name="IgnoreFVALMode">false</Feature>
+		<Feature Name="IgnoreDVALMode">false</Feature>
+		<Feature Name="BitsPerColor">8</Feature>
+		<!--Available formats : Mono, Bayer, RGB, RGBA-->
+		<Feature Name="Format">Mono</Feature>
+		<!--Available subformats for Bayer: 0-GR, 1-RG, 2-GB, 3-BG-->
+		<Feature Name="SubFormat">0</Feature>
+	</CameraLink>
+	<Acquisition>
+		<Feature Name="SleepMs">0</Feature>
+		<Feature Name="AcqFramesCnt">0</Feature>
+		<Feature Name="ReverseYMode">false</Feature>
+		<Feature Name="ExternalSource">false</Feature>
+		<Feature Name="RoiListMode">false</Feature>
+		<Feature Name="RoiListPath" />
+		<!--Available modes : NextFrame, LatestFrame-->
+		<Feature Name="GrabMode">LatestFrame</Feature>
+		<Feature Name="FG_ID">0</Feature>
+	</Acquisition>
+	<Options>
+		<Feature Name="Output32RGB10p">false</Feature>
+	</Options>
+	<Log>
+		<Feature Name="LogVerbosity">3</Feature>
+		<Feature Name="LogSizeMB">20</Feature>
+	</Log>
+</FG>

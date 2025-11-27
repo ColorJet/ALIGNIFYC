@@ -1,0 +1,10 @@
+D:/Alinify/build/../install/include/alinify/camera/camera_interface.h
+D:/Alinify/build/../install/include/alinify/camera/gidel_camera.h
+D:/Alinify/build/../install/include/alinify/common/logger.h
+D:/Alinify/build/../install/include/alinify/common/types.h
+D:/Alinify/build/../install/include/alinify/gpu_warp/cuda_warper.h
+D:/Alinify/build/../install/include/alinify/preprocessing/image_processor.h
+D:/Alinify/build/../install/include/alinify/printer/printer_interface.h
+D:/Alinify/build/../install/include/alinify/registration/elastix_wrapper.h
+D:/Alinify/build/../install/include/alinify/stitching/strip_stitcher.h
+D:/Alinify/build/../install/config/system_config.yaml

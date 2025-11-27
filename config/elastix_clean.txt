@@ -1,0 +1,61 @@
+// Clean Elastix Parameter File - No Warnings
+// Optimized for fabric registration with AdvancedMeanSquares metric
+
+// Basic registration framework
+(Registration "MultiResolutionRegistration")
+(Transform "BSplineTransform")
+(Metric "AdvancedMeanSquares")
+(Optimizer "AdaptiveStochasticGradientDescent")
+(ResampleInterpolator "FinalBSplineInterpolator")
+(Resampler "DefaultResampler")
+
+// Image dimensions
+(FixedImageDimension 2)
+(MovingImageDimension 2)
+(UseDirectionCosines "true")
+
+// Multi-resolution pyramid (4 levels)
+(NumberOfResolutions 4)
+(ImagePyramidSchedule 8 8 4 4 2 2 1 1)
+
+// B-spline transform settings
+(FinalGridSpacingInPhysicalUnits 64.0)
+(HowToCombineTransforms "Compose")
+
+// Optimizer settings (ASGD)
+(MaximumNumberOfIterations 500)
+(SP_alpha 0.6)
+(SP_A 50.0)
+(AutomaticParameterEstimation "true")
+(AutomaticScalesEstimation "true")
+
+// Sampling strategy
+(ImageSampler "RandomCoordinate")
+(NumberOfSpatialSamples 5000)
+(NewSamplesEveryIteration "true")
+(MaximumNumberOfSamplingAttempts 4)
+
+// Interpolation
+(Interpolator "BSplineInterpolator")
+(BSplineInterpolationOrder 3)
+
+// Output control
+(WriteTransformParametersEachIteration "false")
+(WriteTransformParametersEachResolution "false")
+(WriteResultImage "true")
+(CompressResultImage "false")
+(ResultImageFormat "mhd")
+(ResultImagePixelType "float")
+
+// Performance
+(ErodeFixedMask "false")
+(ErodeMask "false")
+
+(UseAdaptiveStepSizes "true")
+(UseConstantStep "false")
+(NumberOfGradientMeasurements "0")
+(NumberOfJacobianMeasurements "1000")
+(NumberOfSamplesForExactGradient "100000")
+(ASGDParameterEstimationMethod "Original")
+
+(Optimizer "AdaptiveStochasticGradientDescent")

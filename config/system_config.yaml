@@ -1,0 +1,206 @@
+camera:
+  bit_depth: 8
+  fov:
+    width: 42.0
+  frequency: 10000
+  gentl:
+    producer_path: C:/Gidel/GidelGrabbers/GenTLbin64
+  gidel:
+    board_id: 0
+    buffer_count: 30
+    buffer_size: 20971520
+    config_file: config/camera/FGConfig.gxfg
+  pixel_size: 0.010256
+  resolution:
+    height: 1
+    width: 4096
+  trigger:
+    encoder_step: 0.0
+    frequency: 10000
+    mode: auto
+    polarity: active_high
+  type: gidel_cameralink
+debug:
+  intermediate_path: debug/intermediate
+  profiling:
+    enable: false
+    output: logs/profile.json
+  save_every_n_frames: 10
+  save_intermediate_results: false
+gpu_acceleration:
+  last_updated: '2025-11-27 12:45:49.790945'
+  mode: warp
+gpu_warp:
+  batch_size: 4
+  device_id: 0
+  enable: true
+  interpolation: bilinear
+  memory:
+    enable_pooling: true
+    max_vram_usage: 0.9
+    overlap: 128
+    tile_size:
+    - 4096
+    - 4096
+  num_streams: 4
+  use_streams: true
+gui:
+  display:
+    max_texture_size: 8192
+    update_rate: 30
+  enable: true
+  manual_correction:
+    control_point_radius: 10
+    enable: true
+    grid_spacing: 50
+    snap_to_grid: false
+  ui_layout:
+    splitter_sizes:
+    - 1302
+    - 610
+  visualization:
+    color_map: jet
+    show_control_points: true
+    show_deformation_field: true
+    show_grid: true
+  window:
+    fullscreen: false
+    height: 1080
+    title: Alinify - Line Scan Registration
+    width: 1920
+monitoring:
+  enable: true
+  export:
+    enable: true
+    format: csv
+    interval: 1000
+    path: logs/performance.csv
+  metrics:
+  - fps
+  - latency
+  - memory_usage
+  - gpu_utilization
+  - cpu_utilization
+preprocessing:
+  edge_enhancement:
+    enable: false
+    high_threshold: 150
+    low_threshold: 50
+    method: canny
+  enable: true
+  filters:
+  - enable: true
+    sigma: 1.0
+    type: gaussian_blur
+  - enable: false
+    intensity_sigma: 50.0
+    spatial_sigma: 3.0
+    type: bilateral
+  - enable: false
+    kernel_size: 3
+    type: median
+  - amount: 0.5
+    enable: false
+    sigma: 1.0
+    type: unsharp_mask
+  normalization:
+    enable: true
+    method: histogram_matching
+printer:
+  buffer:
+    mode: fifo
+    size: 10
+  communication:
+    ip: 192.168.1.100
+    port: 5000
+    protocol: tcp
+    timeout: 5000
+  dll_path: lib/printer_interface.dll
+  enable: true
+  image_format:
+    bit_depth: 8
+    color_space: RGB
+    compression: none
+  quality_control:
+    check_alignment: true
+    check_resolution: true
+    enable: true
+registration:
+  framework: elastix
+  metric:
+    number_of_histograms: 32
+    number_of_samples: 4096
+    type: advanced_mattes_mutual_information
+  optimizer:
+    learning_rate: 1.0
+    max_iterations:
+    - 500
+    - 500
+    - 500
+    - 250
+    - 100
+    min_step_length: 0.001
+    relaxation_factor: 0.5
+    type: adaptive_stochastic_gradient_descent
+  output:
+    compute_jacobian: false
+    save_deformation_field: true
+    save_transform_parameters: true
+  pyramid:
+    levels: 5
+    schedule:
+    - 8
+    - 4
+    - 2
+    - 1
+    - 1
+    smoothing_schedule:
+    - 4
+    - 2
+    - 1
+    - 0
+    - 0
+  sampling:
+    percentage: 0.25
+    strategy: random
+  threads: 0
+  transform:
+    bspline:
+      grid_spacing:
+      - 50
+      - 50
+      order: 3
+    type: bspline
+scanning:
+  calibration:
+    enable: true
+    left_to_right_offset:
+    - 0.0
+    - 0.0
+    right_to_left_offset:
+    - 0.0
+    - 0.0
+  direction_change_delay: 50
+  max_length: 1800
+  mode: bidirectional
+  overlap_pixels: 100
+  strip_width: 42
+stitching:
+  blending:
+    enable: true
+    method: linear
+  method: phase_correlation
+  overlap_region: 100
+  quality_check:
+    enable: true
+    max_offset: 10
+    min_correlation: 0.7
+system:
+  log_file: logs/alinify.log
+  log_level: INFO
+  name: Alinify Line Scan Registration
+  version: 1.0.0
+ui_layout:
+  splitter_sizes:
+  - 1391
+  - 503

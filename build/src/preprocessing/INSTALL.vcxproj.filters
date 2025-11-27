@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\Alinify20251113\Alinify\build\CMakeFiles\32bb3e11f3f00a40a58ad5b6e9da02e2\INSTALL_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{59DF69EA-66EA-37A0-B33A-830624C7FF70}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

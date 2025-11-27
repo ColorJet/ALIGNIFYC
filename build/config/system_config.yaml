@@ -1,0 +1,8 @@
+gpu_acceleration:
+  last_updated: '2025-11-13 20:39:32.438724'
+  mode: warp
+gui:
+  ui_layout:
+    splitter_sizes:
+    - 1494
+    - 418

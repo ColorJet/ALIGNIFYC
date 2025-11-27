@@ -1,0 +1,14 @@
+D:/Alinify20251113/Alinify/build/CMakeFiles/INSTALL.dir
+D:/Alinify20251113/Alinify/build/CMakeFiles/ALL_BUILD.dir
+D:/Alinify20251113/Alinify/build/CMakeFiles/ZERO_CHECK.dir
+D:/Alinify20251113/Alinify/build/src/core/CMakeFiles/INSTALL.dir
+D:/Alinify20251113/Alinify/build/src/camera/CMakeFiles/alinify_camera.dir
+D:/Alinify20251113/Alinify/build/src/camera/CMakeFiles/INSTALL.dir
+D:/Alinify20251113/Alinify/build/src/stitching/CMakeFiles/alinify_stitching.dir
+D:/Alinify20251113/Alinify/build/src/stitching/CMakeFiles/INSTALL.dir
+D:/Alinify20251113/Alinify/build/src/preprocessing/CMakeFiles/alinify_preprocessing.dir
+D:/Alinify20251113/Alinify/build/src/preprocessing/CMakeFiles/INSTALL.dir
+D:/Alinify20251113/Alinify/build/src/printer/CMakeFiles/alinify_printer.dir
+D:/Alinify20251113/Alinify/build/src/printer/CMakeFiles/INSTALL.dir
+D:/Alinify20251113/Alinify/build/src/python_bindings/CMakeFiles/alinify_bindings.dir
+D:/Alinify20251113/Alinify/build/src/python_bindings/CMakeFiles/INSTALL.dir

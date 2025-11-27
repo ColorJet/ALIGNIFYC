@@ -1,0 +1,513 @@
+"""
+Registration backend for Alinify GUI
+Wraps Elastix registration for real-time use
+"""
+
+import numpy as np
+from pathlib import Path
+import time
+from typing import Optional, Tuple, Dict
+import cv2
+import sys
+import io
+from contextlib import contextmanager, redirect_stdout, redirect_stderr
+from datetime import datetime
+
+
+class _StreamTee(io.TextIOBase):
+    """Duplicate writes to original stream and log file."""
+
+    def __init__(self, primary, secondary):
+        super().__init__()
+        self.primary = primary
+        self.secondary = secondary
+
+    def write(self, message):
+        if self.primary is not None:
+            self.primary.write(message)
+        if self.secondary is not None:
+            self.secondary.write(message)
+        return len(message)
+
+    def flush(self):
+        if self.primary is not None:
+            try:
+                self.primary.flush()
+            except (ValueError, OSError):
+                pass  # File already closed
+        if self.secondary is not None:
+            try:
+                self.secondary.flush()
+            except (ValueError, OSError):
+                pass  # File already closed
+
+try:
+    from .elastix_registration import ElastixFabricRegistration
+    ELASTIX_AVAILABLE = True
+except ImportError:
+    try:
+        from elastix_registration import ElastixFabricRegistration
+        ELASTIX_AVAILABLE = True
+    except ImportError:
+        ELASTIX_AVAILABLE = False
+        print("WARNING: Elastix registration not available")
+
+
+class RegistrationBackend:
+    """
+    Unified registration backend for Alinify GUI
+    Supports both Python-Elastix and future C++ bindings
+    """
+    
+    def __init__(self, mode='elastix'):
+        """
+        Initialize registration backend
+        
+        Args:
+            mode: 'elastix' (Python-ITK) or 'cpp' (C++ bindings - future)
+        """
+        self.mode = mode
+        
+        if mode == 'elastix':
+            if not ELASTIX_AVAILABLE:
+                raise RuntimeError("Elastix registration not available. Please install ITK-Elastix.")
+            self.engine = ElastixFabricRegistration(use_clean_parameters=True)
+            print("[OK] Using Python-Elastix registration engine with clean parameters")
+        elif mode == 'cpp':
+            # TODO: Load C++ bindings when available
+            raise NotImplementedError("C++ bindings not yet implemented")
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
+        
+        # Registration results cache
+        self.last_deformation = None
+        self.last_metadata = None
+        self.last_preview_warp = None  # Preview warped image at low resolution
+        
+        # GPU acceleration settings
+        self.warp_acceleration_mode = 'warp'  # Default to Warp if available
+        
+        # Manual correction points: list of [(x, y, dx, dy), ...]
+        
+        # Store paths for high-res warp (persistent across calls)
+        self.moving_rgb_path = None
+        self.fixed_path = None
+        self.moving_path = None
+        self.temp_dir = None
+        self.manual_corrections = []
+
+        # Logging
+        self.log_path = Path("logs") / "elastix_engine.log"
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    def _log(self, message: str):
+        """Log message with timestamp to stdout (and file when captured)."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[Registration Backend] {timestamp} - {message}")
+
+    @contextmanager
+    def _capture_logs(self):
+        """Capture stdout/stderr from Elastix into log file while preserving console output."""
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+        with self.log_path.open("a", encoding="utf-8") as log_file:
+            header = "\n===== Elastix Session {} =====\n".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            log_file.write(header)
+            log_file.flush()
+            tee_out = _StreamTee(original_stdout, log_file)
+            tee_err = _StreamTee(original_stderr, log_file)
+            with redirect_stdout(tee_out), redirect_stderr(tee_err):
+                yield
+
+    def register(self, 
+                 fixed_image: np.ndarray,
+                 moving_image: np.ndarray,
+                 parameters: Optional[Dict] = None,
+                 preview_only: bool = False) -> Tuple[np.ndarray, np.ndarray, Dict]:
+        """
+        Register two images
+        
+        Args:
+            fixed_image: Camera/reference image (grayscale or RGB)
+            moving_image: Design/moving image (grayscale or RGB)
+            parameters: Registration parameters dict
+            preview_only: If True, only warp downsampled preview (for manual correction)
+        
+        Returns:
+            registered_image: Warped moving image (RGB) - preview or full-res
+            deformation_field: [H, W, 2] displacement field
+            metadata: Registration quality metrics
+        """
+        if self.mode == 'elastix':
+            return self._register_elastix(fixed_image, moving_image, parameters, preview_only)
+        else:
+            raise NotImplementedError(f"Mode {self.mode} not implemented")
+    
+    def _register_elastix(self, 
+                          fixed_image: np.ndarray,
+                          moving_image: np.ndarray,
+                          parameters: Optional[Dict] = None,
+                          preview_only: bool = False) -> Tuple[np.ndarray, np.ndarray, Dict]:
+        """
+        Register using Elastix backend
+        
+        Args:
+            preview_only: If True, only warp downsampled preview for manual correction
+        """
+        with self._capture_logs():
+            self._log("Starting Elastix registration...")
+            if preview_only:
+                self._log("Preview mode - will stop before high-res warp")
+            start_time = time.time()
+
+            # Save temporary images for Elastix
+            import tempfile
+
+            # Create or reuse temp directory (persistent for high-res warp)
+            if self.temp_dir is None:
+                self.temp_dir = tempfile.mkdtemp()
+
+            tmpdir = Path(self.temp_dir)
+
+            # Convert to grayscale if needed for registration
+            if len(fixed_image.shape) == 3:
+                fixed_gray = cv2.cvtColor(fixed_image, cv2.COLOR_RGB2GRAY)
+            else:
+                fixed_gray = fixed_image
+
+            if len(moving_image.shape) == 3:
+                moving_gray = cv2.cvtColor(moving_image, cv2.COLOR_RGB2GRAY)
+            else:
+                moving_gray = moving_image
+
+            # Save temporary files
+            fixed_path = tmpdir / "fixed.png"
+            moving_path = tmpdir / "moving.png"
+            moving_rgb_path = tmpdir / "moving_rgb.png"
+
+            cv2.imwrite(str(fixed_path), fixed_gray)
+            cv2.imwrite(str(moving_path), moving_gray)
+
+            # Save RGB version for warping (keep full resolution!)
+            if len(moving_image.shape) == 3:
+                cv2.imwrite(str(moving_rgb_path), cv2.cvtColor(moving_image, cv2.COLOR_RGB2BGR))
+            else:
+                # Convert grayscale to RGB
+                moving_rgb = cv2.cvtColor(moving_gray, cv2.COLOR_GRAY2BGR)
+                cv2.imwrite(str(moving_rgb_path), moving_rgb)
+
+            # Store paths for later high-res warp
+            self.fixed_path = str(fixed_path)
+            self.moving_path = str(moving_path)
+            self.moving_rgb_path = str(moving_rgb_path)
+
+            self._log(f"Saved images to: {tmpdir}")
+            self._log(f"  Fixed: {fixed_path} ({fixed_gray.shape})")
+            self._log(f"  Moving: {moving_path} ({moving_gray.shape})")
+            self._log(f"  Moving RGB: {moving_rgb_path} ({moving_image.shape})")
+
+            # Determine target size from parameters
+            if parameters and 'target_size' in parameters:
+                target_size = parameters['target_size']
+            else:
+                # Auto-scale if image is too large
+                max_dim = max(fixed_gray.shape)
+                if max_dim > 1024:
+                    target_size = (1024, 1024)
+                else:
+                    target_size = None
+
+            # Run registration
+            deformation, fixed_np, moving_np, metadata = self.engine.register_bspline(
+                fixed_path,
+                moving_path,
+                target_size=target_size,
+                parameters=parameters
+            )
+
+            # Cache deformation and metadata first
+            self.last_deformation = deformation
+            self.last_metadata = metadata
+
+            # Warp RGB image - use preview or full-res based on mode
+            if preview_only:
+                # Only warp the downsampled preview image
+                self._log("Warping preview image only (for manual correction)")
+                output_path = tmpdir / "warped_preview.png"
+                warped_rgb = self.engine.warp_rgb_image(
+                    moving_path,  # Use downsampled image, not full RGB
+                    deformation,
+                    output_path
+                )
+            else:
+                # Warp full-resolution RGB image
+                self._log("Warping full-resolution RGB image")
+                output_path = tmpdir / "warped.png"
+                warped_rgb = self.engine.warp_rgb_image(
+                    moving_rgb_path,  # Full-res RGB
+                    deformation,
+                    output_path
+                )
+
+            reg_time = time.time() - start_time
+            self._log(f"Complete in {reg_time:.2f}s")
+            self._log(f"  Quality: {metadata.get('quality', 'unknown')}")
+            self._log(f"  Deformation range: [{deformation.min():.2f}, {deformation.max():.2f}]")
+
+            return warped_rgb, deformation, metadata
+    
+    def warp_image(self, 
+                   image: np.ndarray, 
+                   deformation_field: Optional[np.ndarray] = None) -> np.ndarray:
+        """
+        Apply deformation to an image
+        
+        Args:
+            image: Image to warp
+            deformation_field: Optional deformation field (uses last if None)
+        
+        Returns:
+            Warped image
+        """
+        if deformation_field is None:
+            if self.last_deformation is None:
+                raise ValueError("No deformation field available")
+            deformation_field = self.last_deformation
+        
+        if self.mode == 'elastix':
+            # Use Elastix warping
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmpdir = Path(tmpdir)
+                
+                # Save image
+                img_path = tmpdir / "input.png"
+                if len(image.shape) == 3:
+                    cv2.imwrite(str(img_path), cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+                else:
+                    cv2.imwrite(str(img_path), image)
+                
+                # Warp
+                output_path = tmpdir / "warped.png"
+                warped = self.engine.warp_rgb_image(
+                    img_path,
+                    deformation_field,
+                    output_path
+                )
+                
+                return warped
+        else:
+            raise NotImplementedError()
+    
+    def get_quality_metrics(self, metadata: Dict) -> str:
+        """Format quality metrics for display"""
+        lines = []
+        lines.append(f"Quality: {metadata.get('quality', 'unknown').upper()}")
+        
+        if 'final_metric' in metadata and metadata['final_metric'] is not None:
+            lines.append(f"Metric Value: {metadata['final_metric']:.2f}")
+        
+        if 'registration_time' in metadata:
+            lines.append(f"Time: {metadata['registration_time']:.2f}s")
+        
+        return "\n".join(lines)
+    
+    def set_acceleration_mode(self, mode: str):
+        """Set GPU acceleration mode for warping operations"""
+        self.warp_acceleration_mode = mode
+        
+        if self.mode == 'elastix' and hasattr(self.engine, 'use_warp_acceleration'):
+            if mode == 'warp':
+                self.engine.use_warp_acceleration = True
+                print("[Registration Backend] 🚀 NVIDIA Warp acceleration enabled")
+            else:
+                self.engine.use_warp_acceleration = False
+                print("[Registration Backend] 🐍 PyTorch fallback mode enabled")
+        
+    def get_acceleration_mode(self) -> str:
+        """Get current GPU acceleration mode"""
+        return self.warp_acceleration_mode
+    
+    def is_warp_available(self) -> bool:
+        """Check if NVIDIA Warp acceleration is available"""
+        if self.mode == 'elastix' and hasattr(self.engine, 'use_warp_acceleration'):
+            return hasattr(self.engine, 'warp_accelerator') and self.engine.warp_accelerator is not None
+        return False
+    
+    def get_acceleration_status(self) -> str:
+        """Get detailed acceleration status"""
+        if not self.is_warp_available():
+            return "NVIDIA Warp not available - using PyTorch only"
+        
+        if self.warp_acceleration_mode == 'warp':
+            return "🚀 NVIDIA Warp enabled (Real-time acceleration)"
+        else:
+            return "🐍 PyTorch fallback mode (Standard performance)"
+    
+    def get_warp_performance_stats(self) -> Dict:
+        """Get Warp acceleration performance statistics"""
+        if hasattr(self.engine, 'warp_accelerator') and self.engine.warp_accelerator:
+            return self.engine.warp_accelerator.get_performance_stats()
+        return {}
+    
+    def apply_manual_corrections(self, deformation_field: np.ndarray, 
+                                 corrections: list) -> np.ndarray:
+        """
+        Apply manual corrections to deformation field
+        
+        Args:
+            deformation_field: [H, W, 2] original deformation
+            corrections: list of (x, y, dx, dy) tuples
+        
+        Returns:
+            corrected_deformation: [H, W, 2] with manual corrections applied
+        """
+        if not corrections:
+            return deformation_field
+        
+        print(f"\n[Registration Backend] Applying {len(corrections)} manual corrections...")
+        
+        # Create a copy
+        corrected = deformation_field.copy()
+        h, w = corrected.shape[:2]
+        
+        # Apply Gaussian-weighted influence for each correction point
+        for i, (x, y, dx, dy) in enumerate(corrections, 1):
+            # Convert to pixel coordinates if needed
+            x_px = int(x)
+            y_px = int(y)
+            
+            print(f"  Correction {i}: pos=({x_px}, {y_px}), offset=({dx:.2f}, {dy:.2f})")
+            
+            # Skip out-of-bounds
+            if x_px < 0 or x_px >= w or y_px < 0 or y_px >= h:
+                print(f"    WARNING: Out of bounds, skipping")
+                continue
+            
+            # Create influence radius (50 pixels for more visible effect)
+            radius = 250
+            sigma = radius / 2.5
+            
+            # Create meshgrid for influence calculation
+            y_range = np.arange(max(0, y_px - radius), min(h, y_px + radius + 1))
+            x_range = np.arange(max(0, x_px - radius), min(w, x_px + radius + 1))
+            yy, xx = np.meshgrid(y_range, x_range, indexing='ij')
+            
+            # Calculate Gaussian weights
+            dist_sq = (xx - x_px)**2 + (yy - y_px)**2
+            weights = np.exp(-dist_sq / (2 * sigma**2))
+            
+            # Apply correction with Gaussian falloff (ADDITIVE to existing deformation)
+            corrected[yy.min():yy.max()+1, xx.min():xx.max()+1, 0] += weights * dx
+            corrected[yy.min():yy.max()+1, xx.min():xx.max()+1, 1] += weights * dy
+            
+            print(f"    Applied with radius={radius}, max_weight={weights.max():.3f}")
+        
+        print(f"  ✓ Manual corrections applied")
+        print(f"  Original deformation range: [{deformation_field.min():.2f}, {deformation_field.max():.2f}]")
+        print(f"  Corrected deformation range: [{corrected.min():.2f}, {corrected.max():.2f}]")
+        
+        return corrected
+    
+    def set_manual_corrections(self, corrections: list):
+        """Store manual corrections for later use"""
+        self.manual_corrections = corrections
+        print(f"[Registration Backend] Stored {len(corrections)} manual corrections")
+    
+    def warp_full_resolution(self, deformation_field: Optional[np.ndarray] = None) -> str:
+        """
+        Warp the full-resolution RGB image using stored paths
+        
+        Args:
+            deformation_field: Deformation to apply (uses last if None)
+        
+        Returns:
+            Path to warped image file
+        """
+        if deformation_field is None:
+            deformation_field = self.last_deformation
+        
+        if deformation_field is None:
+            raise ValueError("No deformation field available. Run registration first.")
+        
+        if self.moving_rgb_path is None or not Path(self.moving_rgb_path).exists():
+            raise FileNotFoundError(
+                "Full-resolution fabric image not found. "
+                "It may have been deleted from temporary storage."
+            )
+        
+        print(f"\n[Registration Backend] Warping full-resolution image...")
+        print(f"  Input: {self.moving_rgb_path}")
+        
+        # Apply manual corrections if available
+        if self.manual_corrections:
+            print(f"  Applying {len(self.manual_corrections)} manual corrections...")
+            deformation_field = self.apply_manual_corrections(deformation_field, self.manual_corrections)
+        
+        # Warp using the engine
+        output_path = Path(self.temp_dir) / "warped_fullres.png"
+        warped_rgb = self.engine.warp_rgb_image(
+            self.moving_rgb_path,
+            deformation_field,
+            str(output_path)
+        )
+        
+        print(f"  ✓ Full-resolution warp complete")
+        print(f"  Output: {output_path}")
+        
+        return str(output_path)
+    
+    def cleanup_temp_files(self):
+        """Clean up temporary files"""
+        if self.temp_dir and Path(self.temp_dir).exists():
+            import shutil
+            try:
+                shutil.rmtree(self.temp_dir)
+                print(f"[Registration Backend] Cleaned up temp directory: {self.temp_dir}")
+                self.temp_dir = None
+                self.moving_rgb_path = None
+                self.fixed_path = None
+                self.moving_path = None
+            except Exception as e:
+                print(f"[Registration Backend] Warning: Could not clean temp files: {e}")
+    
+    def __del__(self):
+        """Cleanup on destruction"""
+        self.cleanup_temp_files()
+
+
+def test_backend():
+    """Test the registration backend"""
+    import cv2
+    
+    # Load test images
+    fixed = cv2.imread("camera_capture.png")
+    moving = cv2.imread("master_design.png")
+    
+    if fixed is None or moving is None:
+        print("ERROR: Test images not found")
+        return
+    
+    # Convert BGR to RGB
+    fixed = cv2.cvtColor(fixed, cv2.COLOR_BGR2RGB)
+    moving = cv2.cvtColor(moving, cv2.COLOR_BGR2RGB)
+    
+    # Create backend
+    backend = RegistrationBackend(mode='elastix')
+    
+    # Register
+    registered, deformation, metadata = backend.register(fixed, moving)
+    
+    print("\nBackend Test Results:")
+    print(backend.get_quality_metrics(metadata))
+    print(f"Deformation shape: {deformation.shape}")
+    print(f"Registered shape: {registered.shape}")
+    
+    # Save result
+    cv2.imwrite("test_backend_result.png", cv2.cvtColor(registered, cv2.COLOR_RGB2BGR))
+    print("\nSaved result to: test_backend_result.png")
+
+
+if __name__ == "__main__":
+    test_backend()

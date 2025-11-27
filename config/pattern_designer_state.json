@@ -1,0 +1,24 @@
+{
+  "tile_path": "D:/Config/j1/design2color.tif",
+  "tile_position": [
+    4187,
+    -76
+  ],
+  "tile_width": 688,
+  "tile_height": 790,
+  "mode": "manual",
+  "opacity": 29,
+  "grid_cols": 8,
+  "grid_rows": 3,
+  "pitch_x": 1,
+  "pitch_y": 1,
+  "gap_x": 92,
+  "gap_y": 99,
+  "lock_aspect": true,
+  "x_plus_count": 0,
+  "x_minus_count": 6,
+  "y_plus_count": 0,
+  "y_minus_count": 2,
+  "manual_gap_x": 0,
+  "manual_gap_y": 0
+}
